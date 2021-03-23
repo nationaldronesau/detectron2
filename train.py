@@ -9,6 +9,7 @@ import pycocotools
 import skimage.draw
 from PIL import Image, ImageDraw
 from progress.bar import Bar
+import datetime
 
 # import some common detectron2 utilities
 from detectron2 import model_zoo
@@ -139,11 +140,10 @@ corrosion_metadata = MetadataCatalog.get("corrosion_val")
 #     out = visualizer.draw_dataset_dict(d)
 #     Image.fromarray(out.get_image()).save(str(d['image_id']) + '.jpg')
 
+# CONFIGURATION
 cfg = get_cfg()
 cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
-
-# print(cfg)
-
+cfg.OUTPUT_DIR = "./output/" + "Corrosion_" + "{:%Y%m%dT%H%M}".format(datetime.datetime.now())
 cfg.INPUT.MASK_FORMAT = "bitmask"
 cfg.DATASETS.TRAIN = ("corrosion_train",)
 cfg.DATASETS.TEST = ()
@@ -156,7 +156,25 @@ cfg.SOLVER.STEPS = []        # do not decay learning rate
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512   # faster, and good enough for this toy dataset (default: 512)
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (corrosion)
 
+# TRAIN
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 trainer = DefaultTrainer(cfg) 
 trainer.resume_or_load(resume=False)
 trainer.train()
+
+# INFERENCE
+cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")  # path to the model we just trained
+cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7   # set a custom testing threshold
+predictor = DefaultPredictor(cfg)
+
+# TEST INFERENCE
+dataset_dicts = get_darwin_dataset(dataset_directory, 'val')
+for d in random.sample(dataset_dicts, 3):    
+    im = cv2.imread(d["file_name"])
+    # im = Image.open(d["file_name"])
+    outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
+    print(outputs)
+    v = Visualizer(im, metadata=corrosion_metadata,  scale=1)
+    out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+    # cv2_imshow(out.get_image()[:, :, ::-1])
+    Image.fromarray(out.get_image()[:, :, ::-1]).save(str(d['image_id']) + '.jpg')
