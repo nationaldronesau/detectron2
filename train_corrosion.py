@@ -216,26 +216,35 @@ def setup(args):
         # get_darwin_dataset(dataset_directory, d)
         DatasetCatalog.register("corrosion_" + d, lambda d=d: get_darwin_dataset(dataset_directory, d))
         MetadataCatalog.get("corrosion_" + d).set(thing_classes=["Corrosion"])
+        
 
-    corrosion_metadata = MetadataCatalog.get("corrosion_val")
+    # number of epochs to train
+    EPOCHS = 60
 
+    NUM_GPU = 2
+
+    # get size of train and val datasets
+    TRAIN_SIZE = len(DatasetCatalog.get("corrosion_train"))
+    VAL_SIZE = len(DatasetCatalog.get("corrosion_val"))
 
     # CONFIGURATION
     cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml"))
     cfg.OUTPUT_DIR = "./output/" + "Corrosion_" + "{:%Y%m%dT%H%M}".format(datetime.datetime.now())
     cfg.INPUT.MASK_FORMAT = "bitmask"
     cfg.DATASETS.TRAIN = ("corrosion_train",)
     cfg.DATASETS.TEST = ()
-    cfg.TEST.EVAL_PERIOD=10
+    cfg.TEST.EVAL_PERIOD = 887 # eval period should be one epoch, which is the number of images in training set divided by num_gpu*IMS_PER_BATCH
     cfg.DATALOADER.NUM_WORKERS = 2
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")  # Let training initialize from model zoo
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml")  # Let training initialize from model zoo
     cfg.SOLVER.IMS_PER_BATCH = 2
     cfg.SOLVER.BASE_LR = 0.00025  # pick a good LR
-    cfg.SOLVER.MAX_ITER = 5000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-    cfg.SOLVER.STEPS = []        # do not decay learning rate
+    cfg.SOLVER.MAX_ITER = int(TRAIN_SIZE/(NUM_GPU*cfg.SOLVER.IMS_PER_BATCH)*EPOCHS)  # one iteration is 4 images so one epoch is around 887 iterations. 
+    # cfg.SOLVER.STEPS = []        # do not decay learning rate
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512   # faster, and good enough for this toy dataset (default: 512)
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (corrosion)
+
+    print(cfg.SOLVER.MAX_ITER)
 
     return cfg
 
